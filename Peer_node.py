@@ -41,3 +41,21 @@ class Peernode:
                 print(f"Error handling peer: {e}")
             finally:
                 client_socket.close()
+        
+        def process_request(self, request):
+            #Process incoming requests(storing or retrieving file info).
+            command = request.get("command")
+            
+            if command == "ping":
+                return {"status" : "alive"}
+            
+            elif command == 'store':
+                key, value =request.get("key"), request.get("value")
+                self.data_store[key] = value
+                return {"status" : "stored" ,'key' : key}
+            
+            elif command == "find":
+                key = request.get('key')
+                return {"value": self.data_store(key, 'notfound')}
+            
+            return {"error" : 'invalid command'}        
