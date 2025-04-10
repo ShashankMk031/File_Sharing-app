@@ -8,8 +8,8 @@ class PeerNode:
         self.ip = ip
         self.port = port
         self.node_id = self.generate_node_id()
-        self.routing_table = {}  # Store known peers
-        self.data_store = {}  # DHT key-value store
+        self.routing_table = {}  # Stores known peers
+        self.data_store = {}  # DHT key-value store (file_hash -> peer list)
 
     def generate_node_id(self):
         """Generate a unique ID for the peer using SHA-256."""
@@ -41,7 +41,7 @@ class PeerNode:
             client_socket.close()
 
     def process_request(self, request):
-        """Process incoming requests (for storing or retrieving file info)."""
+        """Process incoming requests for storing or retrieving file information."""
         command = request.get("command")
 
         if command == "ping":
@@ -49,14 +49,42 @@ class PeerNode:
 
         elif command == "store":
             key, value = request.get("key"), request.get("value")
-            self.data_store[key] = value
+            if key in self.data_store:
+                self.data_store[key].append(value)  # Append new peer
+            else:
+                self.data_store[key] = [value]  # Create new entry
             return {"status": "stored", "key": key}
 
         elif command == "find":
             key = request.get("key")
-            return {"value": self.data_store.get(key, "not found")}
+            if key in self.data_store:
+                return {"peers": self.data_store[key]}  # Return list of peers with file
+            else:
+                return self.forward_request(key)  # Forward lookup
 
         return {"error": "invalid command"}
+
+    def forward_request(self, key):
+        """Forward file search request to known peers if not found locally."""
+        for peer_address in self.routing_table:
+            try:
+                peer_ip, peer_port = peer_address.split(":")
+                peer_port = int(peer_port)
+
+                client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client.connect((peer_ip, peer_port))
+                client.send(json.dumps({"command": "find", "key": key}).encode())
+
+                response = json.loads(client.recv(1024).decode())
+                client.close()
+
+                if "peers" in response and response["peers"] != "not found":
+                    return response  # Found file in another peer
+
+            except Exception as e:
+                print(f"Failed to contact peer {peer_address}: {e}")
+
+        return {"peers": "not found"}  # If no peers have the file
 
     def connect_to_peer(self, peer_ip, peer_port):
         """Connect to another peer and exchange information."""
@@ -74,6 +102,22 @@ class PeerNode:
         except Exception as e:
             print(f"Failed to connect to peer {peer_ip}:{peer_port}: {e}")
 
+    def store_file(self, filename):
+        """Store file hash in the DHT."""
+        file_hash = hashlib.sha256(filename.encode()).hexdigest()
+        self.data_store[file_hash] = [f"{self.ip}:{self.port}"]
+        print(f"Stored {filename} with hash {file_hash}")
+
+    def find_file(self, filename):
+        """Find peers that have the requested file."""
+        file_hash = hashlib.sha256(filename.encode()).hexdigest()
+        print(f"Searching for file {filename} with hash {file_hash}")
+
+        if file_hash in self.data_store:
+            return self.data_store[file_hash]  # Return local result
+        else:
+            return self.forward_request(file_hash)  # Search the network
+
 # Example usage
 if __name__ == "__main__":
     peer = PeerNode("127.0.0.1", 5000)
@@ -81,3 +125,9 @@ if __name__ == "__main__":
 
     # Manually connect to another peer
     peer.connect_to_peer("127.0.0.1", 5001)
+
+    # Store a file
+    peer.store_file("example.txt")
+
+    # Try finding the file
+    print(peer.find_file("example.txt"))
