@@ -19,6 +19,7 @@ class PeerNode:
     def start_server(self):
         """Start listening for incoming peer connections."""
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow reuse of the port
         server.bind((self.ip, self.port))
         server.listen(5)
         print(f"Peer {self.node_id} listening on {self.ip}:{self.port}")
@@ -116,7 +117,10 @@ class PeerNode:
         if file_hash in self.data_store:
             return self.data_store[file_hash]  # Return local result
         else:
-            return self.forward_request(file_hash)  # Search the network
+            return self.forward_request(file_hash)  # Search the network 
+        
+    
+
 
 # Example usage
 if __name__ == "__main__":
@@ -130,4 +134,5 @@ if __name__ == "__main__":
     peer.store_file("example.txt")
 
     # Try finding the file
-    print(peer.find_file("example.txt"))
+    print(peer.find_file("example.txt")) 
+    
